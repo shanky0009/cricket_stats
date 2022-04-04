@@ -23,7 +23,38 @@ DBT(data build tool) is used to transform this raw data into schema which can be
 <!-- GETTING STARTED -->
 ## Getting Started
 
-To run 
+To run this project locally you need to install docker, docker compose and dbt
+
+
+Starting airflow
+
+```bash
+cd data_ingestion
+docker compose build
+docker compose up airflow-init
+docker compose up
+```
+This will start containers required by airflow. Airflow webserver can be accessed at ...
+
+
+Starting local postgres container
+
+```bash
+cd local_project
+docker compose up
+```
+
+This will start postgres container which is used to store data for local development.
+
+Installing dbt locally
+
+
+
+1. Go to airflow webserver(..)
+2. Select '' DAG and trigger it.(after it completes we will have all data in our local postgres DB)
+3. Then go to `cric_transform` directory and run `dbt run` command.(this will run the models which can be used for analytics and to create dashboard)
+
+
 
 
 

@@ -13,3 +13,7 @@ DS_Store
 serving_dir
 *.csv
 .ipynb_checkpoints/
+
+local_project/cric_data_postgres_data/*
+local_project/my_taxi_postgres_data/*
+data_ingestion/cricket_data_postgres_data/*
