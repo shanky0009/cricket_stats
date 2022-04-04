@@ -43,7 +43,8 @@ path_to_local_home = os.environ.get("AIRFLOW_HOME", "/opt/airflow/")
 parquet_file = DATASET_FILE_TEMPLATE.replace('.csv', '.parquet')
 BIGQUERY_DATASET = os.environ.get("BIGQUERY_DATASET", 'cricket_data')
 
-match_info_keys_required = ['city', 'dates', 'match_type', 'officials', 'outcome', 'player_of_match', 'season', 'team_type', 'teams', 'toss', 'venue', 'id']
+match_info_keys_required = ['city', 'dates', 'match_type', 'officials', 'outcome', 'player_of_match', 'season', 'team_type', 'teams', 'toss', 'venue', 'match_id']
+
 
 def dump_pickle(file_name, data):
     with open(file_name, 'wb') as f:
@@ -122,13 +123,13 @@ def process_match_info(source_folder, output_file):
     match_info_df.to_parquet(output_file)
 
 
-def process_deliveries_data(source_folder, runs_pickle_file, wickets_pickle_file):
-    print(runs_pickle_file, wickets_pickle_file)
+def process_deliveries_data(source_folder, runs_parquet_file, wickets_parquet_file):
+    # print(runs_pickle_file, wickets_pickle_file)
     glob_search_path = os.path.join(source_folder, "*.json")
     json_paths = glob.glob(glob_search_path)
-    runs_output_folder = Path(runs_pickle_file).parent
+    runs_output_folder = Path(runs_parquet_file).parent
     runs_output_folder.mkdir(parents=True, exist_ok=True)
-    wickets_output_folder = Path(wickets_pickle_file).parent
+    wickets_output_folder = Path(wickets_parquet_file).parent
     wickets_output_folder.mkdir(parents=True, exist_ok=True)
     innings_runs = []
     innings_wickets = []
@@ -156,8 +157,28 @@ def process_deliveries_data(source_folder, runs_pickle_file, wickets_pickle_file
                         innings_wickets.append(ov)
                     else:
                         innings_runs.append(ov)
-    dump_pickle(runs_pickle_file, innings_runs)
-    dump_pickle(wickets_pickle_file, innings_wickets)
+    wickets_df = pd.DataFrame(innings_wickets)
+    wickets_df.extras.replace('NaN', np.nan, inplace=True)
+    if 'review' in wickets_df.columns:
+        wickets_df.drop(['review'], axis=1, inplace=True)
+    if 'replacements' in wickets_df.columns:
+        wickets_df.drop(['replacements'], axis=1, inplace=True)
+    # wickets_df.to_sql(name=table_name, con=engine, if_exists='append', index=False)
+    # wickets_df.to_parquet(wickets_parquet_file)
+
+    runs_df = pd.DataFrame(innings_runs)
+    runs_df['runs'] = runs_df['runs'].apply(js.dumps)
+    if 'replacements' in runs_df.columns:
+        # runs_df['replacements'] = runs_df['replacements'].apply(js.dumps)
+        runs_df.replacements.replace('NaN', np.nan, inplace=True)
+    # runs_df['extras'] = runs_df['extras'].apply(js.dumps)
+    runs_df.extras.replace('NaN', np.nan, inplace=True)
+    if 'review' in runs_df.columns:
+        runs_df.drop(['review'], axis=1, inplace=True)
+    # runs_df.to_sql(name=table_name, con=engine, if_exists='append', index=False)
+    runs_df.to_parquet(runs_parquet_file)
+    dump_pickle(runs_parquet_file, innings_runs)
+    dump_pickle(wickets_parquet_file, innings_wickets)
 
 
 def process_wickets_data(wickets_pickle_file, output_file):
@@ -180,9 +201,9 @@ def process_runs_data(runs_pickle_file, output_file):
     runs_df = pd.DataFrame(innings_runs)
     runs_df['runs'] = runs_df['runs'].apply(js.dumps)
     if 'replacements' in runs_df.columns:
-        runs_df['replacements'] = runs_df['replacements'].apply(js.dumps)
+        # runs_df['replacements'] = runs_df['replacements'].apply(js.dumps)
         runs_df.replacements.replace('NaN', np.nan, inplace=True)
-    runs_df['extras'] = runs_df['extras'].apply(js.dumps)
+    # runs_df['extras'] = runs_df['extras'].apply(js.dumps)
     runs_df.extras.replace('NaN', np.nan, inplace=True)
     if 'review' in runs_df.columns:
         runs_df.drop(['review'], axis=1, inplace=True)
@@ -192,7 +213,7 @@ def process_runs_data(runs_pickle_file, output_file):
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime.datetime(2004, 1, 1),
+    "start_date": datetime.datetime(2004, 12, 31),
     "depends_on_past": False,
     "retries": 1,
 }
@@ -202,7 +223,7 @@ with DAG(
     schedule_interval="0 23 31 12 *",
     default_args=default_args,
     catchup=True,
-    max_active_runs=1,
+    max_active_runs=2,
     tags=['dtc-de'],
 ) as dag:
 
@@ -239,7 +260,7 @@ with DAG(
         python_callable=upload_to_gcs,
         op_kwargs={
             "bucket": BUCKET,
-            "object_name": f"match_info/match_info_{year}.parquet",
+            "object_name": MATCH_INFO_GCS_FILE_TEMPLATE,
             "local_file": MATCH_INFO_PARQUET_FILE_TEMPLATE,
         },
     )
@@ -249,8 +270,8 @@ with DAG(
         python_callable=process_deliveries_data,
         op_kwargs={
             "source_folder": DATASET_OUTPUT_FOLDER_TEMPLATE,
-            "runs_pickle_file": INNINGS_RUNS_PICKLE_FILE_TEMPLATE,
-            "wickets_pickle_file": INNINGS_WICKETS_PICKLE_FILE_TEMPLATE
+            "runs_parquet_file": INNINGS_RUNS_PICKLE_FILE_TEMPLATE,
+            "wickets_parquet_file": INNINGS_WICKETS_PICKLE_FILE_TEMPLATE
         },
     )
 
@@ -263,23 +284,33 @@ with DAG(
         },
     )
 
+    upload_wickets_data_to_gcs_task = PythonOperator(
+        task_id="upload_wickets_data_to_gcs_task",
+        python_callable=upload_to_gcs,
+        op_kwargs={
+            "bucket": BUCKET,
+            "object_name": INNINGS_WICKETS_GCS_PARQUET_FILE_TEMPLATE,
+            "local_file": INNINGS_WICKETS_PARQUET_FILE_TEMPLATE,
+        },
+    )
+
     process_runs_data_task = PythonOperator(
         task_id="process_runs_data_task",
         python_callable=process_runs_data,
         op_kwargs={
             "runs_pickle_file": INNINGS_RUNS_PICKLE_FILE_TEMPLATE,
-            "output_file": INNINGS_WICKETS_PARQUET_FILE_TEMPLATE
+            "output_file": INNINGS_RUNS_PARQUET_FILE_TEMPLATE
         },
     )
 
-    # upload_deliveries_info_to_gcs_task = PythonOperator(
-    #     task_id="upload_deliveries_info_to_gcs_task",
-    #     python_callable=upload_folder_to_gcs,
-    #     op_kwargs={
-    #         "bucket": BUCKET,
-    #         "source_folder": innings_info_file_template,
-    #         "gcloud_upload_folder": innings_gcloud_upload_folder
-    #     },
-    # )
+    upload_runs_data_to_gcs_task = PythonOperator(
+        task_id="upload_runs_data_to_gcs_task",
+        python_callable=upload_to_gcs,
+        op_kwargs={
+            "bucket": BUCKET,
+            "object_name": INNINGS_RUNS_GCS_FILE_TEMPLATE,
+            "local_file": INNINGS_RUNS_PARQUET_FILE_TEMPLATE,
+        },
+    )
 
-    download_dataset_task >> unzip_file_task >> process_match_info_task >> upload_match_info_to_gcs_task >> process_deliveries_data_task >> upload_deliveries_info_to_gcs_task
+    download_dataset_task >> unzip_file_task >> process_match_info_task >> upload_match_info_to_gcs_task >> process_deliveries_data_task >> process_wickets_data_task >> upload_wickets_data_to_gcs_task >> process_runs_data_task >> upload_runs_data_to_gcs_task

@@ -1,0 +1,12 @@
+
+version: 2
+
+sources:
+    - name: staging
+      database: forward-camera-339110
+      schema: cricket_data
+
+      tables:
+        - name: runs_data_clustered_partition
+        - name: wickets_data_clustered_partition
+        - name: match_info
