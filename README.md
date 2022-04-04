@@ -105,13 +105,15 @@ docker compose up
 This will start postgres container which is used to store data for local development.
 
 Installing dbt locally
-
-
+follow
+https://docs.getdbt.com/dbt-cli/install/pip
+and 
+https://docs.getdbt.com/reference/warehouse-profiles/postgres-profile
 
 1. Go to airflow webserver(..)
-2. Select '' DAG and trigger it.(after it completes we will have all data in our local postgres DB)
+2. Select `cric_data_ingestion_dag_local` DAG and trigger it.(after it completes we will have all data in our local postgres DB)
 3. Then go to `cric_transform` directory and run `dbt run` command.(this will run the models which can be used for analytics and to create dashboard)
-
+(schema needs to be updated for this)
 
 
 
